@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { generateAccessToken, generateRefreshToken } from '../../../security/jwt';
-// import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 
-// const prisma = new PrismaClient();
+const prisma = new PrismaClient();
 
 export const register = async (req: Request, res: Response) => {
     try {
@@ -13,18 +13,55 @@ export const register = async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Email and password are required' });
         }
 
-        // const hashedPassword = await bcrypt.hash(password, 10);
+        // Check if user already exists
+        const existingUser = await prisma.user.findUnique({ where: { email } });
+        if (existingUser) {
+            return res.status(409).json({ error: 'User already exists' });
+        }
 
-        // Simulate user creation
-        // const user = await prisma.user.create({
-        //   data: {
-        //     email,
-        //     // password: hashedPassword, // Note: Schema doesn't have password field yet, assuming it will be added or handled via identity service
-        //   },
-        // });
+        // Hash password
+        const hashedPassword = await bcrypt.hash(password, 10);
 
-        // For now, just return success
-        return res.status(201).json({ success: true, message: 'User registered successfully (simulation)' });
+        // Create user and wallet transactionally
+        const user = await prisma.$transaction(async (tx) => {
+            // 1. Create User
+            const newUser = await tx.user.create({
+                data: {
+                    email,
+                    password: hashedPassword,
+                    kycStatus: 'pending'
+                },
+            });
+
+            // 2. Create Wallet for User
+            await tx.wallet.create({
+                data: {
+                    userId: newUser.id,
+                    creditsBalance: 0,
+                    moneyAvailable: 0,
+                    moneyPending: 0
+                }
+            });
+
+            return newUser;
+        });
+
+        // Generate tokens
+        const accessToken = generateAccessToken(user.id, 'user');
+        const refreshToken = generateRefreshToken(user.id);
+
+        return res.status(201).json({
+            success: true,
+            message: 'User registered successfully',
+            accessToken,
+            refreshToken,
+            user: {
+                id: user.id,
+                email: user.email,
+                kycStatus: user.kycStatus
+            }
+        });
+
     } catch (error) {
         console.error('Register error:', error);
         return res.status(500).json({ error: 'Internal server error' });
@@ -39,28 +76,25 @@ export const login = async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Email and password are required' });
         }
 
-        // Simulate user lookup
-        // const user = await prisma.user.findUnique({ where: { email } });
-        // if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+        // Find user
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
-        // Simulate password check
-        // const isValid = await bcrypt.compare(password, user.password);
-        // if (!isValid) return res.status(401).json({ error: 'Invalid credentials' });
+        // Verify password
+        const isValid = await bcrypt.compare(password, user.password);
+        if (!isValid) return res.status(401).json({ error: 'Invalid credentials' });
 
-        // Mock user for token generation
-        const mockUserId = 'user-uuid-placeholder';
-        const mockRole = 'user';
-
-        const accessToken = generateAccessToken(mockUserId, mockRole);
-        const refreshToken = generateRefreshToken(mockUserId);
+        // Generate tokens
+        const accessToken = generateAccessToken(user.id, 'user'); // Default role 'user' for now
+        const refreshToken = generateRefreshToken(user.id);
 
         return res.json({
             accessToken,
             refreshToken,
             user: {
-                id: mockUserId,
-                email,
-                role: mockRole
+                id: user.id,
+                email: user.email,
+                kycStatus: user.kycStatus
             }
         });
     } catch (error) {

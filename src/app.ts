@@ -15,22 +15,6 @@ import qrRouter from './services/qr-service';
 // Duplicate import removed
 import walletRouter from './services/wallet-service';
 import offlineEventsRouter from './services/offline-events-service';
-import delegationRouter from './services/delegation-service';
-import contractRouter from './services/contract-service';
-import anchorRouter from './services/anchor-service';
-import aiRouter from './services/ai-service';
-import adminPanelRouter from './services/admin-panel-service';
-import notificationsRouter from './services/notifications-service';
-import tagProvisioningRouter from './services/tag-provisioning-service';
-
-const app = express();
-
-// Global Middlewares
-app.use(cors({ origin: ['https://quantumcert.com.br', 'https://www.quantumcert.com.br'], credentials: true }));
-app.use(express.json());
-app.use(requestLogger);
-app.use(attachUser);
-
 // Rate Limiter (e.g., 100 requests per 15 minutes)
 const limiter = rateLimiter(100, 15 * 60 * 1000);
 app.use(limiter);
